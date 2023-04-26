@@ -209,6 +209,12 @@ struct Variable {
     /// This field may or may not hold a valid gradient value
     Value grad{};
 
+    /// Accumulated second-order moment
+    Value grad2{};
+
+    /// Number of samples contributing to 'grad'
+    Value count{};
+
     Variable() {
         memset(this, 0, sizeof(char *) + 5 * sizeof(uint32_t));
     }
@@ -1307,7 +1313,9 @@ template <typename Value> struct GatherEdge : Special {
     }
 
     void backward(Variable *source, const Variable *target, uint32_t) const override {
-        Value &source_grad = (Value &) source->grad;
+        Value &source_grad    = (Value &) source->grad,
+              &source_grad2   = (Value &) source->grad2,
+              &source_counter = (Value &) source->counter;
         uint32_t size = source->size;
 
         if (source->size == 1 && target->size == 1 && !target->placeholder) {
@@ -1316,16 +1324,29 @@ template <typename Value> struct GatherEdge : Special {
             return;
         }
 
-        if (!source_grad.valid())
+        if (!source_grad.valid()) {
             source_grad = zeros<Value>(size);
-        else if ((uint32_t) source_grad.size() != size)
+            if (.. if AD flag set .. ) {
+                ... grad2, counter ..
+            }
+        } else if ((uint32_t) source_grad.size() != size) {
             source_grad.resize(size);
+            if (.. if AD flag set .. ) {
+                ... grad2, counter ..
+            }
+        }
 
         MaskGuard guard(mask_stack);
         if (permute)
             scatter(source_grad, target->grad, offset, mask);
-        else
+        else {
+            /// Todo Yanni
             scatter_reduce(ReduceOp::Add, source_grad, target->grad, offset, mask);
+            if (.. if AD flag set .. ) {
+                scatter_reduce(ReduceOp::Add, source_grad2, sqr(target->grad2), offset, mask);
+                scatter_reduce(ReduceOp::Add, source_counter, 1.f, offset, mask);
+            }
+        }
     }
 
     void forward(const Variable *source, Variable *target, uint32_t) const override {
@@ -1580,6 +1601,56 @@ template <typename T> T ad_grad(uint32_t index, bool fail_if_missing) {
     return result;
 }
 
+template <typename T> T ad_grad2(uint32_t index, bool fail_if_missing) {
+    if (unlikely(index == 0))
+        return T(0);
+
+    std::lock_guard<std::mutex> guard(state.mutex);
+    auto it = state.variables.find(index);
+    if (it == state.variables.end()) {
+        if (fail_if_missing)
+            ad_raise("ad_grad2(): referenced an unknown variable a%u!", index);
+        return T(0);
+    }
+
+    const Variable &v = it->second;
+    T result = v.grad2;
+
+    if constexpr (is_jit_v<T>) {
+        if (!is_valid(result))
+            result = zeros<T>(v.size);
+        else if (result.size() != v.size)
+            result.resize(v.size);
+    }
+
+    return result;
+}
+
+template <typename T> T ad_counter(uint32_t index, bool fail_if_missing) {
+    if (unlikely(index == 0))
+        return T(0);
+
+    std::lock_guard<std::mutex> guard(state.mutex);
+    auto it = state.variables.find(index);
+    if (it == state.variables.end()) {
+        if (fail_if_missing)
+            ad_raise("ad_counter(): referenced an unknown variable a%u!", index);
+        return T(0);
+    }
+
+    const Variable &v = it->second;
+    T result = v.counter;
+
+    if constexpr (is_jit_v<T>) {
+        if (!is_valid(result))
+            result = zeros<T>(v.size);
+        else if (result.size() != v.size)
+            result.resize(v.size);
+    }
+
+    return result;
+}
+
 template <typename T>
 void ad_set_grad(uint32_t index, const T &value, bool fail_if_missing) {
     auto const &scopes = local_state.scopes;
@@ -1609,6 +1680,9 @@ void ad_set_grad(uint32_t index, const T &value, bool fail_if_missing) {
         v.grad = value;
     else
         v.grad = sum(value);
+
+    v.grad2 = Value();
+    v.counter = Value();
 }
 
 template <typename T>
@@ -2377,6 +2451,8 @@ template DRJIT_EXPORT void ad_dec_ref_impl<Value>(uint32_t) noexcept;
 template DRJIT_EXPORT uint32_t ad_new<Value>(const char *, size_t, uint32_t,
                                             uint32_t *, Value *);
 template DRJIT_EXPORT Value ad_grad<Value>(uint32_t, bool);
+template DRJIT_EXPORT Value ad_grad2<Value>(uint32_t, bool);
+template DRJIT_EXPORT Value ad_counter<Value>(uint32_t, bool);
 template DRJIT_EXPORT void ad_set_grad<Value>(uint32_t, const Value &, bool);
 template DRJIT_EXPORT void ad_accum_grad<Value>(uint32_t, const Value &, bool);
 template DRJIT_EXPORT void ad_set_label<Value>(uint32_t, const char *);
