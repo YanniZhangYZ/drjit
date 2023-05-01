@@ -209,11 +209,11 @@ struct Variable {
     /// This field may or may not hold a valid gradient value
     Value grad{};
 
-    /// Accumulated second-order moment
+    // /// Accumulated second-order moment
     Value grad2{};
 
     /// Number of samples contributing to 'grad'
-    Value count{};
+    Value counter{};
 
     Variable() {
         memset(this, 0, sizeof(char *) + 5 * sizeof(uint32_t));
@@ -541,7 +541,7 @@ constexpr bool IsDouble = std::is_same_v<Value, double>;
 static_assert(sizeof(Edge) == 8 * sizeof(uint32_t),
               "Edge data structure has incorrect size. Padding problem?");
 
-static_assert(sizeof(Variable) == ((IsDouble ? 2 : 0) + 8) * sizeof(uint32_t),
+static_assert(sizeof(Variable) == ((IsDouble ? 6 : 2) + 8) * sizeof(uint32_t),
               "Variable data structure has incorrect size. Padding problem?");
 
 // ==========================================================================
@@ -1312,7 +1312,7 @@ template <typename Value> struct GatherEdge : Special {
         }
     }
 
-    void backward(Variable *source, const Variable *target, uint32_t) const override {
+    void backward(Variable *source, const Variable *target, uint32_t flags) const override {
         Value &source_grad    = (Value &) source->grad,
               &source_grad2   = (Value &) source->grad2,
               &source_counter = (Value &) source->counter;
@@ -1326,13 +1326,16 @@ template <typename Value> struct GatherEdge : Special {
 
         if (!source_grad.valid()) {
             source_grad = zeros<Value>(size);
-            if (.. if AD flag set .. ) {
-                ... grad2, counter ..
+            if (flags & ADFlag::BackpropVarianceCounter) {
+                source_grad2 = zeros<Value>(size);
+                source_counter = zeros<Value>(size);
+
             }
         } else if ((uint32_t) source_grad.size() != size) {
             source_grad.resize(size);
-            if (.. if AD flag set .. ) {
-                ... grad2, counter ..
+            if (flags & ADFlag::BackpropVarianceCounter) {
+                source_grad2.resize(size);
+                source_counter.resize(size);
             }
         }
 
@@ -1342,9 +1345,9 @@ template <typename Value> struct GatherEdge : Special {
         else {
             /// Todo Yanni
             scatter_reduce(ReduceOp::Add, source_grad, target->grad, offset, mask);
-            if (.. if AD flag set .. ) {
+            if (flags & ADFlag::BackpropVarianceCounter) {
                 scatter_reduce(ReduceOp::Add, source_grad2, sqr(target->grad2), offset, mask);
-                scatter_reduce(ReduceOp::Add, source_counter, 1.f, offset, mask);
+                scatter_reduce(ReduceOp::Add, source_counter, Value(1.f), offset, mask);
             }
         }
     }
