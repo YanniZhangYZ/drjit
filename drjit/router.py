@@ -4018,7 +4018,7 @@ def grad2(arg, preserve_type=True):
         if _dr.is_integral_v(arg):
             grad2s = _dr.zeros(_dr.detached_t(type(arg)))
         else:
-            grad2s = arg.grad_()
+            grad2s = arg.grad2_()
 
         if preserve_type:
             return type(arg)(grad2s)
@@ -4064,7 +4064,7 @@ def counter(arg, preserve_type=True):
         if _dr.is_integral_v(arg):
             counters = _dr.zeros(_dr.detached_t(type(arg)))
         else:
-            counters = arg.grad_()
+            counters = arg.counter_()
 
         if preserve_type:
             return type(arg)(counters)
