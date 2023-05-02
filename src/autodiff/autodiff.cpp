@@ -1326,14 +1326,14 @@ template <typename Value> struct GatherEdge : Special {
 
         if (!source_grad.valid()) {
             source_grad = zeros<Value>(size);
-            if (flags & ADFlag::BackpropVarianceCounter) {
+            if (flags & ADFlag::BackPropVarianceCounter) {
                 source_grad2 = zeros<Value>(size);
                 source_counter = zeros<Value>(size);
 
             }
         } else if ((uint32_t) source_grad.size() != size) {
             source_grad.resize(size);
-            if (flags & ADFlag::BackpropVarianceCounter) {
+            if (flags & ADFlag::BackPropVarianceCounter) {
                 source_grad2.resize(size);
                 source_counter.resize(size);
             }
@@ -1345,7 +1345,7 @@ template <typename Value> struct GatherEdge : Special {
         else {
             /// Todo Yanni
             scatter_reduce(ReduceOp::Add, source_grad, target->grad, offset, mask);
-            if (flags & ADFlag::BackpropVarianceCounter) {
+            if (flags & ADFlag::BackPropVarianceCounter) {
                 scatter_reduce(ReduceOp::Add, source_grad2, sqr(target->grad2), offset, mask);
                 scatter_reduce(ReduceOp::Add, source_counter, Value(1.f), offset, mask);
             }
