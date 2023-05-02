@@ -3994,6 +3994,98 @@ def grad(arg, preserve_type=True):
     else:
         return None
 
+def grad2(arg, preserve_type=True):
+    '''
+    Return the gradient value associated to a given variable.
+
+    When the variable doesn't have gradient tracking enabled, this function
+    returns ``0``.
+
+    For all input variables that are not Dr.Jit arrays or mapping and sequences,
+    thi function returns ``None``.
+
+    Args:
+        arg (object): An arbitrary Dr.Jit array, tensor,
+          :ref:`custom data structure <custom-struct>`, sequences, or mapping.
+
+        preserve_type (bool): Defines whether the returned variable should
+          preserve the type of the input variable.
+
+    Returns:
+        object: the gradient value associated to the input variable.
+    '''
+    if _dr.is_diff_v(arg):
+        if _dr.is_integral_v(arg):
+            grad2s = _dr.zeros(_dr.detached_t(type(arg)))
+        else:
+            grad2s = arg.grad2_()
+
+        if preserve_type:
+            return type(arg)(grad2s)
+        else:
+            return grad2s
+    elif _dr.is_struct_v(arg):
+        result = type(arg)()
+        if not preserve_type:
+            raise TypeError("grad(): preserve_type=True is required when "
+                            "getting the gradient of a custom data structure!")
+        for k in type(arg).DRJIT_STRUCT.keys():
+            setattr(result, k, grad2(getattr(arg, k), preserve_type))
+        return result
+    elif isinstance(arg, _Sequence) and not isinstance(arg, str):
+        return type(arg)([grad2(v, preserve_type) for v in arg])
+    elif isinstance(arg, _Mapping):
+        return {k : grad2(v, preserve_type) for k, v in arg.items()}
+    else:
+        return None
+
+
+def counter(arg, preserve_type=True):
+    '''
+    Return the gradient value associated to a given variable.
+
+    When the variable doesn't have gradient tracking enabled, this function
+    returns ``0``.
+
+    For all input variables that are not Dr.Jit arrays or mapping and sequences,
+    thi function returns ``None``.
+
+    Args:
+        arg (object): An arbitrary Dr.Jit array, tensor,
+          :ref:`custom data structure <custom-struct>`, sequences, or mapping.
+
+        preserve_type (bool): Defines whether the returned variable should
+          preserve the type of the input variable.
+
+    Returns:
+        object: the gradient value associated to the input variable.
+    '''
+    if _dr.is_diff_v(arg):
+        if _dr.is_integral_v(arg):
+            counters = _dr.zeros(_dr.detached_t(type(arg)))
+        else:
+            counters = arg.counter_()
+
+        if preserve_type:
+            return type(arg)(counters)
+        else:
+            return counters
+    elif _dr.is_struct_v(arg):
+        result = type(arg)()
+        if not preserve_type:
+            raise TypeError("grad(): preserve_type=True is required when "
+                            "getting the gradient of a custom data structure!")
+        for k in type(arg).DRJIT_STRUCT.keys():
+            setattr(result, k, counter(getattr(arg, k), preserve_type))
+        return result
+    elif isinstance(arg, _Sequence) and not isinstance(arg, str):
+        return type(arg)([counter(v, preserve_type) for v in arg])
+    elif isinstance(arg, _Mapping):
+        return {k : counter(v, preserve_type) for k, v in arg.items()}
+    else:
+        return None
+
+
 
 
 def set_grad(dst, src):

@@ -1856,11 +1856,17 @@ enum class ADFlag : uint32_t {
    // Clear the gradients of processed interior vertices (out-degree != 0)
    ClearInterior = 4,
 
+   BackPropGrad = 8,
+   BackPropVar  = 16,
+   BackPropOnes = 32,
+   BackPropVarianceCounter = 64,
+
+
    /// Clear gradients of processed vertices only, but leave edges intact
    ClearVertices = (uint32_t) ClearInput | (uint32_t) ClearInterior,
 
    /// Default: clear everything (edges, gradients of processed vertices)
-   Default = (uint32_t) ClearEdges | (uint32_t) ClearVertices
+   Default = (uint32_t) ClearEdges | (uint32_t) ClearVertices | BackPropVarianceCounter
 };
 
 constexpr uint32_t operator |(ADFlag f1, ADFlag f2)   { return (uint32_t) f1 | (uint32_t) f2; }

@@ -48,6 +48,8 @@ uint32_t ad_new(const char *label, size_t size, uint32_t ops = 0,
 
 /// Query the gradient associated with a variable
 template <typename Value> Value ad_grad(uint32_t index, bool fail_if_missing);
+template <typename Value> Value ad_grad2(uint32_t index, bool fail_if_missing);
+template <typename Value> Value ad_counter(uint32_t index, bool fail_if_missing);
 
 /// Overwrite the gradient associated with a variable
 template <typename Value>
@@ -1665,6 +1667,24 @@ struct DiffArray : ArrayBase<value_t<Type_>, is_mask_v<Type_>, DiffArray<Type_>>
             return zeros<Type>();
     }
 
+    const Type grad2_(bool fail_if_missing = false) const {
+        DRJIT_MARK_USED(fail_if_missing);
+        if constexpr (IsEnabled)
+            return detail::ad_grad2<Type>(m_index, fail_if_missing);
+        else
+            return zeros<Type>();
+    }
+
+    const Type counter_(bool fail_if_missing = false) const {
+        DRJIT_MARK_USED(fail_if_missing);
+        if constexpr (IsEnabled)
+            return detail::ad_counter<Type>(m_index, fail_if_missing);
+        else
+            return zeros<Type>();
+    }
+
+
+
     void set_grad_(const Type &value, bool fail_if_missing = false) {
         DRJIT_MARK_USED(value);
         DRJIT_MARK_USED(fail_if_missing);
@@ -1806,6 +1826,8 @@ protected:
                                                        uint32_t, uint32_t *,   \
                                                        T *);                   \
     extern template DRJIT_AD_EXPORT T ad_grad<T>(uint32_t, bool);              \
+    extern template DRJIT_AD_EXPORT T ad_grad2<T>(uint32_t, bool);             \
+    extern template DRJIT_AD_EXPORT T ad_counter<T>(uint32_t, bool);           \
     extern template DRJIT_AD_EXPORT void ad_set_grad<T>(uint32_t, const T &,   \
                                                         bool);                 \
     extern template DRJIT_AD_EXPORT void ad_accum_grad<T>(uint32_t, const T &, \

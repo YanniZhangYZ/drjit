@@ -52,7 +52,7 @@
  * This is an intentional decision to allow for a simple and performant
  * implementation.
  */
-
+// #include <iostream>
 #include "common.h"
 #include <drjit/jit.h>
 #include <drjit/math.h>
@@ -209,6 +209,14 @@ struct Variable {
     /// This field may or may not hold a valid gradient value
     Value grad{};
 
+    /// Accumulated second-order moment
+    Value grad2{};
+
+    /// Number of samples contributing to 'grad'
+    Value counter{};
+
+
+
     Variable() {
         memset(this, 0, sizeof(char *) + 5 * sizeof(uint32_t));
     }
@@ -243,10 +251,11 @@ struct Variable {
      * optimizations.
      */
     template <typename T = Value>
-    void accum(const T& v, uint32_t src_size) {
+    void accum(const T& v, uint32_t src_size, uint32_t flags=0, bool is_leaf=false) {
         if constexpr (is_array_v<T>) {
             bool grad_valid = is_valid(grad);
 
+            // std::cout << "accum " << v.size() << " " << src_size << " " << size << " " << grad_valid << std::endl;
             if (size == 1 && src_size != 1) {
                 /* When this variable is scalar (size == 1) and the source is
                    not (src_size != 1), the gradient must be reduced to a single
@@ -255,25 +264,68 @@ struct Variable {
                    broadcast to all elements. */
 
                 Value v2;
+                Value variance_coefficient, counter_coefficient;
                 if (v.size() == 1) {
+                    // std::cout << "Broadcasting scalar gradient (accum)" << std::endl;
                     v2 = v * scalar_t<Value>(src_size);
+                    if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+                        variance_coefficient = v * v * scalar_t<Value>(src_size);
+                        counter_coefficient = scalar_t<Value>(src_size);
+                    }
+                    // if (!is_leaf || (flags & ADFlag::BackPropGrad)) {
+                    //     v2 = v * scalar_t<Value>(src_size);
+                    // } else {
+                    //     if (flags & ADFlag::BackPropVar)
+                    //         v2 = v * v * scalar_t<Value>(src_size);
+                    //     else if (flags & ADFlag::BackPropOnes)
+                    //         v2 = scalar_t<Value>(src_size);
+                    //     else
+                    //         v2 = v * scalar_t<Value>(src_size);
+                    // }
                 } else {
                     assert(v.size() == src_size);
                     v2 = sum(v);
+                    if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+                        variance_coefficient = sum(sqr(v));
+                        counter_coefficient = width(v);
+                    }
+                    // if (!is_leaf || (flags & ADFlag::BackPropGrad)) {
+                    //     v2 = sum(v);
+                    // } else {
+                    //     if (flags & ADFlag::BackPropVar)
+                    //         v2 = sum(sqr(v));
+                    //     else if (flags & ADFlag::BackPropOnes)
+                    //         v2 = width(v);
+                    //     else
+                    //         v2 = sum(v);
+                    // }
                 }
 
-                if (grad_valid)
+                if (grad_valid){
                     grad += v2;
-                else
+                    grad2 += variance_coefficient;
+                    counter += counter_coefficient;
+                }else{
                     grad = std::move(v2);
+                    grad2 = std::move(variance_coefficient);
+                    counter = std::move(counter_coefficient);
+                }
             } else {
-                if (grad_valid)
+                if (grad_valid){
                     grad += v;
-                else
+                    // grad2 += sqr(v);
+                    // counter += width(v);
+                }
+                else{
                     grad = v;
+                    // grad2 = sqr(v);
+                    // counter = width(v);
+                }
             }
         } else {
             grad += v;
+            // grad2 += sqr(v);
+            // counter += width(v);
         }
     }
 
@@ -286,7 +338,8 @@ struct Variable {
      * optimizations.
      */
     template <typename T = Value>
-    void mul_accum(const T &v1, const T &v2_, uint32_t src_size) {
+    void mul_accum(const T &v1, const T &v2_, uint32_t src_size,
+                   uint32_t flags, bool is_leaf) {
         /* The goal of the following logic is to always ensure that
            v1 == 0 implies v1 * v2 == 0, even if multiplication by
            v2 would produce a NaN (e.g. if v2 is infinite or NaN). */
@@ -313,6 +366,10 @@ struct Variable {
 
         if constexpr (is_array_v<T>) {
             bool grad_valid = is_valid(grad);
+            // std::cout << "mul_accum " << src_size << " " << size << " " << grad_valid << " " << is_leaf << std::endl;
+            // std::cout << "v1: " << v1 << std::endl;
+            // std::cout << "v2: " << v2 << std::endl;
+            // std::cout << "grad (before): " << grad << std::endl;
 
             if (size == 1 && src_size != 1) {
                 /* When this variable is scalar (size == 1) and the source is
@@ -322,26 +379,88 @@ struct Variable {
                    broadcast to all elements. */
 
                 T v3 = v1 * v2;
+                T variance_coefficient, counter_coefficient;
                 if (v3.size() == 1) {
+                    // std::cout << "Broadcasting scalar gradient (mul_accum)" << std::endl;
                     v3 *= scalar_t<Value>(src_size);
-                } else {
+                    if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+                        variance_coefficient = sqr(v3) * scalar_t<Value>(src_size);
+                        counter_coefficient = scalar_t<Value>(src_size);
+                    }
+                    // if (flags & ADFlag::BackPropGrad)
+                    //     v3 *= scalar_t<Value>(src_size);
+                    // else if (flags & ADFlag::BackPropVar)
+                    //     v3 = sqr(v3) * scalar_t<Value>(src_size);
+                    // else if (flags & ADFlag::BackPropOnes)
+                    //     v3 = scalar_t<Value>(src_size);
+                 } else {
                     assert(v3.size() == src_size);
                     v3 = sum(v3);
+                    if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+                        variance_coefficient = sum(v1 * sqr(v2));
+                        counter_coefficient = v1 * width(v2);
+                    }
+
+                    // if (flags & ADFlag::BackPropGrad)
+                    //     v3 = sum(v3);
+                    // else if (flags & ADFlag::BackPropVar)
+                    //     v3 = sum(v1 * sqr(v2));
+                    // else if (flags & ADFlag::BackPropOnes)
+                    //     v3 = v1 * width(v2);
                 }
 
-                if (grad_valid)
+                if (grad_valid){
                     grad += v3;
-                else
+                    grad2 += variance_coefficient;
+                    counter += counter_coefficient;
+                }
+                else{
                     grad = std::move(v3);
+                    grad2 = std::move(variance_coefficient);
+                    counter = std::move(counter_coefficient);
+                }
             } else {
-                if (grad_valid)
+                if (grad_valid){
                     grad = fmadd(v1, v2, grad);
-                else
+                    grad2 = fmadd(v1, sqr(v2), grad2);
+                    counter = fmadd(v1, width(v2), counter);
+                    // if (flags & ADFlag::BackPropGrad)
+                    //     grad = fmadd(v1, v2, grad);
+                    // else if (flags & ADFlag::BackPropVar)
+                    //     grad = fmadd(v1, sqr(v2), grad);
+                    // else if (flags & ADFlag::BackPropOnes)
+                    //     grad = fmadd(v1, width(v2), grad);
+                }
+                else{
                     grad = v1 * v2;
+                    grad2 = v1 * sqr(v2);
+                    counter = v1 * width(v2);
+                    // if (flags & ADFlag::BackPropGrad)
+                    //     grad = v1 * v2;
+                    // else if (flags & ADFlag::BackPropVar)
+                    //     grad = v1 * sqr(v2);
+                    // else if (flags & ADFlag::BackPropOnes)
+                    //     grad = v1 * width(v2);
+                }
             }
         } else {
+            // std::cout << "mul_accum scalar " << src_size << " " << size << " " << is_leaf << std::endl;
+            // std::cout << "v1: " << v1 << std::endl;
+            // std::cout << "v2: " << v2 << std::endl;
+            // std::cout << "grad (before): " << grad << std::endl;
+
             grad = fmadd(v1, v2, grad);
+            grad2 = fmadd(v1, sqr(v2), grad2);
+            counter = fmadd(v1, width(v2), counter);
+            // if (flags & ADFlag::BackPropGrad)
+            //     grad = fmadd(v1, v2, grad);
+            // else if (flags & ADFlag::BackPropVar)
+            //     grad = fmadd(v1, sqr(v2), grad);
+            // else if (flags & ADFlag::BackPropOnes)
+            //     grad = fmadd(v1, width(v2), grad);
         }
+
+        // std::cout << "grad (after) " << grad << std::endl;
     }
 
     bool is_scalar() const { return size == 1; }
@@ -494,7 +613,8 @@ struct Scope {
 struct Special {
     virtual void backward(Variable * /* source */,
                           const Variable * /* target */,
-                          uint32_t /* flags */) const {
+                          uint32_t /* flags */,
+                          bool /* is_leaf */) const {
         ad_fail("Special::backward(): not implemented!");
     }
 
@@ -535,7 +655,7 @@ constexpr bool IsDouble = std::is_same_v<Value, double>;
 static_assert(sizeof(Edge) == 8 * sizeof(uint32_t),
               "Edge data structure has incorrect size. Padding problem?");
 
-static_assert(sizeof(Variable) == ((IsDouble ? 2 : 0) + 8) * sizeof(uint32_t),
+static_assert(sizeof(Variable) == ((IsDouble ? 6 : 2) + 8) * sizeof(uint32_t),
               "Variable data structure has incorrect size. Padding problem?");
 
 // ==========================================================================
@@ -1032,10 +1152,10 @@ uint32_t ad_new(const char *label, size_t size, uint32_t op_count,
 template <typename Value> struct MaskEdge : Special {
     MaskEdge(const Mask &mask, bool negate) : mask(mask), negate(negate) { }
 
-    void backward(Variable *source, const Variable *target, uint32_t) const override {
+    void backward(Variable *source, const Variable *target, uint32_t flags, bool is_leaf) const override {
         source->accum(!negate ? detail::and_(target->grad, mask)
                               : detail::andnot_(target->grad, mask),
-                      target->size);
+                      target->size, flags, is_leaf);
     }
 
     void forward(const Variable *source, Variable *target, uint32_t) const override {
@@ -1049,7 +1169,7 @@ template <typename Value> struct MaskEdge : Special {
 };
 
 template <typename Value> struct SpecialConnection : Special {
-    void backward(Variable *, const Variable *target, uint32_t) const override {
+    void backward(Variable *, const Variable *target, uint32_t, bool) const override {
         if (target->size)
             const_cast<Variable *>(target)->ref_count_grad++;
     }
@@ -1112,7 +1232,7 @@ template <typename Value> struct SpecialCallback : Special {
     SpecialCallback(DiffCallback *callback, Scope &&scope)
         : callback(callback), scope(std::move(scope)) { }
 
-    void backward(Variable *, const Variable *target, uint32_t flags) const override {
+    void backward(Variable *, const Variable *target, uint32_t flags, bool) const override {
         ad_trace("ad_traverse(): invoking user callback ..");
         uint32_t edge = target->next_fwd;
 
@@ -1306,8 +1426,12 @@ template <typename Value> struct GatherEdge : Special {
         }
     }
 
-    void backward(Variable *source, const Variable *target, uint32_t) const override {
-        Value &source_grad = (Value &) source->grad;
+    void backward(Variable *source, const Variable *target, uint32_t flags, bool is_leaf) const override {
+
+        Value &source_grad    = (Value &) source->grad,
+            &source_grad2   = (Value &) source->grad2,
+            &source_counter = (Value &) source->counter;
+
         uint32_t size = source->size;
 
         if (source->size == 1 && target->size == 1 && !target->placeholder) {
@@ -1316,16 +1440,41 @@ template <typename Value> struct GatherEdge : Special {
             return;
         }
 
-        if (!source_grad.valid())
+        if (!source_grad.valid()){
             source_grad = zeros<Value>(size);
-        else if ((uint32_t) source_grad.size() != size)
+            if(flags & ADFlag::BackPropVarianceCounter){
+                source_grad2 = zeros<Value>(size);
+                source_counter = zeros<Value>(size);
+            }
+        
+        
+        }else if ((uint32_t) source_grad.size() != size){
             source_grad.resize(size);
+            if(flags & ADFlag::BackPropVarianceCounter){
+                source_grad2.resize(size);
+                source_counter.resize(size);
+            }
+        }
 
         MaskGuard guard(mask_stack);
+        if (is_leaf && !permute) {
+            if (flags & ADFlag::BackPropVarianceCounter) {
+                scatter_reduce(ReduceOp::Add, source_grad2, sqr(target->grad2), offset, mask);
+                scatter_reduce(ReduceOp::Add, source_counter, Value(1.0), offset, mask);
+            }
+        }
+
         if (permute)
             scatter(source_grad, target->grad, offset, mask);
-        else
+        else{
             scatter_reduce(ReduceOp::Add, source_grad, target->grad, offset, mask);
+            // if (flags & ADFlag::BackPropVarianceCounter) {
+            //     scatter_reduce(ReduceOp::Add, source_grad2, sqr(target->grad2), offset, mask);
+            //     scatter_reduce(ReduceOp::Add, source_counter, Value(1.0), offset, mask);
+            //     return;
+            // }
+        
+        }
     }
 
     void forward(const Variable *source, Variable *target, uint32_t) const override {
@@ -1424,7 +1573,7 @@ template <typename Value> struct ScatterEdge : Special {
         }
     }
 
-    void backward(Variable *source, const Variable *target, uint32_t) const override {
+    void backward(Variable *source, const Variable *target, uint32_t, bool) const override {
         MaskGuard guard(mask_stack);
         source->accum(gather<Value>(target->grad, offset, mask),
                       (uint32_t) width(offset));
@@ -1580,6 +1729,59 @@ template <typename T> T ad_grad(uint32_t index, bool fail_if_missing) {
     return result;
 }
 
+
+template <typename T> T ad_grad2(uint32_t index, bool fail_if_missing) {
+    if (unlikely(index == 0))
+        return T(0);
+
+    std::lock_guard<std::mutex> guard(state.mutex);
+    auto it = state.variables.find(index);
+    if (it == state.variables.end()) {
+        if (fail_if_missing)
+            ad_raise("ad_grad2(): referenced an unknown variable a%u!", index);
+        return T(0);
+    }
+
+    const Variable &v = it->second;
+    T result = v.grad2;
+
+    if constexpr (is_jit_v<T>) {
+        if (!is_valid(result))
+            result = zeros<T>(v.size);
+        else if (result.size() != v.size)
+            result.resize(v.size);
+    }
+
+    return result;
+}
+
+template <typename T> T ad_counter(uint32_t index, bool fail_if_missing) {
+    if (unlikely(index == 0))
+        return T(0);
+
+    std::lock_guard<std::mutex> guard(state.mutex);
+    auto it = state.variables.find(index);
+    if (it == state.variables.end()) {
+        if (fail_if_missing)
+            ad_raise("ad_counter(): referenced an unknown variable a%u!", index);
+        return T(0);
+    }
+
+    const Variable &v = it->second;
+    T result = v.counter;
+
+    if constexpr (is_jit_v<T>) {
+        if (!is_valid(result))
+            result = zeros<T>(v.size);
+        else if (result.size() != v.size)
+            result.resize(v.size);
+    }
+
+    return result;
+}
+
+
+
 template <typename T>
 void ad_set_grad(uint32_t index, const T &value, bool fail_if_missing) {
     auto const &scopes = local_state.scopes;
@@ -1609,6 +1811,9 @@ void ad_set_grad(uint32_t index, const T &value, bool fail_if_missing) {
         v.grad = value;
     else
         v.grad = sum(value);
+
+    v.grad2 = Value();
+    v.counter = Value();
 }
 
 template <typename T>
@@ -1952,11 +2157,13 @@ void ad_traverse(ADMode mode, uint32_t flags) {
                 set_label(v0->grad, tmp);
         }
 
+        bool is_leaf = (mode == ADMode::Backward && v1->next_bwd == 0);
+
         if (unlikely(edge.special)) {
             if (mode == ADMode::Forward)
                 edge.special->forward(v0, v1, flags);
             else
-                edge.special->backward(v1, v0, flags);
+                edge.special->backward(v1, v0, flags, is_leaf);
 
             if (flags & (uint32_t) ADFlag::ClearEdges) {
                 // Edge may have been invalidated by callback, look up once more
@@ -1968,7 +2175,7 @@ void ad_traverse(ADMode mode, uint32_t flags) {
                 }
             }
         } else {
-            v1->mul_accum(v0->grad, edge.weight, v0->size);
+            v1->mul_accum(v0->grad, edge.weight, v0->size, flags, is_leaf);
 
             if (flags & (uint32_t) ADFlag::ClearEdges)
                 edge.weight = Value();
@@ -2377,6 +2584,8 @@ template DRJIT_EXPORT void ad_dec_ref_impl<Value>(uint32_t) noexcept;
 template DRJIT_EXPORT uint32_t ad_new<Value>(const char *, size_t, uint32_t,
                                             uint32_t *, Value *);
 template DRJIT_EXPORT Value ad_grad<Value>(uint32_t, bool);
+template DRJIT_EXPORT Value ad_grad2<Value>(uint32_t, bool);
+template DRJIT_EXPORT Value ad_counter<Value>(uint32_t, bool);
 template DRJIT_EXPORT void ad_set_grad<Value>(uint32_t, const Value &, bool);
 template DRJIT_EXPORT void ad_accum_grad<Value>(uint32_t, const Value &, bool);
 template DRJIT_EXPORT void ad_set_label<Value>(uint32_t, const char *);
