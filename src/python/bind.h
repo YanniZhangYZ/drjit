@@ -462,6 +462,8 @@ auto bind_full(py::class_<Array> &cls, bool /* scalar_mode */ = false) {
 
         if constexpr (Array::IsFloat) {
             cls.def("grad_", [](const Array &a) { return a.grad_(); });
+            cls.def("grad2_", [](const Array &a) { return a.grad2_(); });
+            cls.def("counter_", [](const Array &a) { return a.counter_(); });
             cls.def("set_grad_", [](Array &a, dr::detached_t<Array> &value) { a.set_grad_(value); });
             cls.def("accum_grad_", [](Array &a, dr::detached_t<Array> &value) { a.accum_grad_(value); });
             cls.def("set_grad_enabled_", &Array::set_grad_enabled_);

@@ -107,6 +107,7 @@ PYBIND11_MODULE(drjit_ext, m_) {
         .value("ClearInput", dr::ADFlag::ClearInput)
         .value("ClearInterior", dr::ADFlag::ClearInterior)
         .value("ClearVertices", dr::ADFlag::ClearVertices)
+        .value("BackPropVarianceCounter", dr::ADFlag::BackPropVarianceCounter)
         .value("Default", dr::ADFlag::Default)
         .def(py::self == py::self)
         .def(py::self | py::self)
