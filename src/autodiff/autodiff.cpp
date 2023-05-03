@@ -303,29 +303,49 @@ struct Variable {
 
                 if (grad_valid){
                     grad += v2;
+                    // if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+                    //     grad2 += variance_coefficient;
+                    //     counter += counter_coefficient;
+                    // }
                     grad2 += variance_coefficient;
                     counter += counter_coefficient;
                 }else{
                     grad = std::move(v2);
+                    // if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+                    //     grad2 = std::move(variance_coefficient);
+                    //     counter = std::move(counter_coefficient);
+                    // }
                     grad2 = std::move(variance_coefficient);
                     counter = std::move(counter_coefficient);
                 }
             } else {
                 if (grad_valid){
                     grad += v;
-                    // grad2 += sqr(v);
-                    // counter += width(v);
+                    // if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+                    //     grad2 += sqr(v);
+                    //     counter += width(v);
+                    // }
+                    grad2 += sqr(v);
+                    counter += width(v);
                 }
                 else{
                     grad = v;
-                    // grad2 = sqr(v);
-                    // counter = width(v);
+                    // if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+                    //     grad2 = sqr(v);
+                    //     counter = width(v);
+                    // }
+                    grad2 = sqr(v);
+                    counter = width(v);
                 }
             }
         } else {
             grad += v;
-            // grad2 += sqr(v);
-            // counter += width(v);
+            // if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+            //     grad2 += sqr(v);
+            //     counter += width(v);
+            // }
+            grad2 += sqr(v);
+            counter += width(v);
         }
     }
 
@@ -411,19 +431,32 @@ struct Variable {
 
                 if (grad_valid){
                     grad += v3;
+                    // if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+                    //     grad2 += variance_coefficient;
+                    //     counter += counter_coefficient;
+                    // }
                     grad2 += variance_coefficient;
                     counter += counter_coefficient;
                 }
                 else{
                     grad = std::move(v3);
+                    // if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+                    //     grad2 = std::move(variance_coefficient);
+                    //     counter = std::move(counter_coefficient);
+                    // }
                     grad2 = std::move(variance_coefficient);
                     counter = std::move(counter_coefficient);
                 }
             } else {
                 if (grad_valid){
                     grad = fmadd(v1, v2, grad);
+                    // if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+                    //     grad2 = fmadd(v1, sqr(v2), grad2);
+                    //     counter = fmadd(v1, width(v2), counter);
+                    // }
                     grad2 = fmadd(v1, sqr(v2), grad2);
                     counter = fmadd(v1, width(v2), counter);
+                    
                     // if (flags & ADFlag::BackPropGrad)
                     //     grad = fmadd(v1, v2, grad);
                     // else if (flags & ADFlag::BackPropVar)
@@ -433,8 +466,13 @@ struct Variable {
                 }
                 else{
                     grad = v1 * v2;
+                    // if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+                    //     grad2 = v1 * sqr(v2);
+                    //     counter = v1 * width(v2);
+                    // }
                     grad2 = v1 * sqr(v2);
                     counter = v1 * width(v2);
+                    
                     // if (flags & ADFlag::BackPropGrad)
                     //     grad = v1 * v2;
                     // else if (flags & ADFlag::BackPropVar)
@@ -450,8 +488,13 @@ struct Variable {
             // std::cout << "grad (before): " << grad << std::endl;
 
             grad = fmadd(v1, v2, grad);
+            // if(is_leaf && (flags & ADFlag::BackPropVarianceCounter)){
+            //     grad2 = fmadd(v1, sqr(v2), grad2);
+            //     counter = fmadd(v1, width(v2), counter);
+            // }
             grad2 = fmadd(v1, sqr(v2), grad2);
             counter = fmadd(v1, width(v2), counter);
+
             // if (flags & ADFlag::BackPropGrad)
             //     grad = fmadd(v1, v2, grad);
             // else if (flags & ADFlag::BackPropVar)
