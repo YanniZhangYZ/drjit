@@ -1856,10 +1856,10 @@ enum class ADFlag : uint32_t {
    // Clear the gradients of processed interior vertices (out-degree != 0)
    ClearInterior = 4,
 
-   BackPropGrad = 8,
-   BackPropVar  = 16,
-   BackPropOnes = 32,
-   BackPropVarianceCounter = 64,
+//    BackPropGrad = 8,
+//    BackPropVar  = 16,
+//    BackPropOnes = 32,
+   BackPropVarianceCounter = 8,
 
 
    /// Clear gradients of processed vertices only, but leave edges intact
