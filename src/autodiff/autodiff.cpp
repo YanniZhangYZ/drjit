@@ -280,30 +280,50 @@ struct Variable {
 
                 if (grad_valid) {
                     grad += v2;
-                    grad2 += grad2_coeff;
-                    counter += counter_coeff;
+                    if (flags & ADFlag::BackPropVarianceCounter) {
+                        if (is_leaf) {
+                            grad2 += grad2_coeff;
+                            counter += counter_coeff;
+                        } else {
+                            grad2 += v2;
+                            counter += v2;
+                        }
+                    }
                 }
                 else {
                     grad = std::move(v2);
-                    grad2 = std::move(grad2_coeff);
-                    counter = std::move(counter_coeff);
+                    if (flags & ADFlag::BackPropVarianceCounter) {
+                        if (is_leaf) {
+                            grad2 = std::move(grad2_coeff);
+                            counter = std::move(counter_coeff);
+                        } else {
+                            grad2 = std::move(v2);
+                            counter = std::move(v2);
+                        }
+                    } 
                 }
             } else {
                 if (grad_valid) {
                     grad += v;
-                    grad2 += v;
-                    counter += v;
+                    if (flags & ADFlag::BackPropVarianceCounter) {
+                        grad2 += v;
+                        counter += v;
+                    }
                 }
                 else {
                     grad = v;
-                    grad2 = v;
-                    counter = v;
+                    if (flags & ADFlag::BackPropVarianceCounter) {
+                        grad2 = v;
+                        counter = v;
+                    }
                 }
             }
         } else {
             grad += v;
-            grad2 += v;
-            counter += v;
+            if (flags & ADFlag::BackPropVarianceCounter) {
+                grad2 = v;
+                counter = v;
+            }
         }
     }
 
@@ -360,11 +380,11 @@ struct Variable {
                 T grad2_coeff, counter_coeff;
                 if (v3.size() == 1) {
                     // std::cout << "Broadcasting scalar gradient (mul_accum)" << std::endl;
-                    v3 *= scalar_t<Value>(src_size);
                     if (flags & ADFlag::BackPropVarianceCounter) {
                         grad2_coeff = sqr(v3) * scalar_t<Value>(src_size);
                         counter_coeff = scalar_t<Value>(src_size);
                     }
+                    v3 *= scalar_t<Value>(src_size);
                  } else {
                     assert(v3.size() == src_size);
                     v3 = sum(v3);
@@ -377,13 +397,17 @@ struct Variable {
 
                 if (grad_valid) {
                     grad += v3;
-                    grad2 += grad2_coeff;
-                    counter += counter_coeff;
+                    if (flags & ADFlag::BackPropVarianceCounter) {
+                        grad2 += grad2_coeff;
+                        counter += counter_coeff;
+                    }
                 }
                 else {
                     grad = std::move(v3);
-                    grad2 = std::move(grad2_coeff);
-                    counter = std::move(counter_coeff);
+                    if (flags & ADFlag::BackPropVarianceCounter) {
+                        grad2 = std::move(grad2_coeff);
+                        counter = std::move(counter_coeff);
+                    }
                 }
             } else {
                 if (grad_valid) {
@@ -1195,8 +1219,11 @@ template <typename Value> struct SpecialCallback : Special {
 
                 if (v->ref_count_grad > 0 && --v->ref_count_grad == 0) {
                     if (((flags & (uint32_t) ADFlag::ClearInterior) && v->next_fwd != 0) ||
-                        ((flags & (uint32_t) ADFlag::ClearInput) && v->next_fwd == 0))
+                        ((flags & (uint32_t) ADFlag::ClearInput) && v->next_fwd == 0)) {
                         v->grad = Value();
+                        v->grad2 = Value();
+                        v->counter = Value();
+                    }
                 }
                 edge = e.next_fwd;
             } while (edge);
@@ -1221,8 +1248,11 @@ template <typename Value> struct SpecialCallback : Special {
                     if (((flags & (uint32_t) ADFlag::ClearInterior) && v->next_bwd != 0) ||
                         ((flags & (uint32_t) ADFlag::ClearInput) && v->next_bwd == 0)) {
 
-                        if (!(scope.isolate && e.source < scope.variable_index))
+                        if (!(scope.isolate && e.source < scope.variable_index)) {
                             v->grad = Value();
+                            v->grad2 = Value();
+                            v->counter = Value();
+                        }
                     }
                 }
 
@@ -1406,7 +1436,6 @@ template <typename Value> struct GatherEdge : Special {
             if (flags & ADFlag::BackPropVarianceCounter) {
                 scatter_reduce(ReduceOp::Add, source_grad2, sqr(target->grad2), offset, mask);
                 scatter_reduce(ReduceOp::Add, source_counter, Value(1.0), offset, mask);
-                return;
             }
         }
 
@@ -2017,6 +2046,8 @@ void ad_traverse(ADMode mode, uint32_t flags) {
         if (clear_grad) {
             ad_trace("ad_traverse(): clearing gradient at intermediate variable a%u", prev_i);
             prev->grad = Value();
+            prev->grad2 = Value();
+            prev->counter = Value();
         }
     };
 
