@@ -52,7 +52,6 @@
  * This is an intentional decision to allow for a simple and performant
  * implementation.
  */
-// #include <iostream>
 #include "common.h"
 #include <drjit/jit.h>
 #include <drjit/math.h>
@@ -336,7 +335,7 @@ struct Variable {
      * optimizations.
      */
     template <typename T = Value>
-    void mul_accum(const T &v1, const T &v2_, uint32_t src_size,
+    void mul_accum(const T &v1, const T &v12, const T &v1c, const T &v2_, uint32_t src_size,
                    uint32_t flags, bool is_leaf) {
         /* The goal of the following logic is to always ensure that
            v1 == 0 implies v1 * v2 == 0, even if multiplication by
@@ -377,11 +376,12 @@ struct Variable {
                    broadcast to all elements. */
 
                 T v3 = v1 * v2;
-                T grad2_coeff, counter_coeff;
+                T grad2_coeff = v12 * v2;
+                T counter_coeff;
                 if (v3.size() == 1) {
                     // std::cout << "Broadcasting scalar gradient (mul_accum)" << std::endl;
                     if (flags & ADFlag::BackPropVarianceCounter) {
-                        grad2_coeff = sqr(v3) * scalar_t<Value>(src_size);
+                        grad2_coeff = sqr(grad2_coeff) * scalar_t<Value>(src_size);
                         counter_coeff = scalar_t<Value>(src_size);
                     }
                     v3 *= scalar_t<Value>(src_size);
@@ -389,8 +389,8 @@ struct Variable {
                     assert(v3.size() == src_size);
                     v3 = sum(v3);
                     if (flags & ADFlag::BackPropVarianceCounter) {
-                        grad2_coeff = sum(v1 * sqr(v2));
-                        counter_coeff = v1 * width(v2);
+                        grad2_coeff = sum(v12 * sqr(v2));
+                        counter_coeff = v1c * width(v2);
                     }
 
                 }
@@ -413,23 +413,23 @@ struct Variable {
                 if (grad_valid) {
                     grad = fmadd(v1, v2, grad);
                     if (flags & ADFlag::BackPropVarianceCounter) {
-                        grad2 = fmadd(v1, sqr(v2), grad2);
-                        counter = fmadd(v1, width(v2), counter);
+                        grad2 = fmadd(v12, sqr(v2), grad2);
+                        counter = fmadd(v1c, width(v2), counter);
                     }
                 }
                 else {
                     grad = v1 * v2;
                     if (flags & ADFlag::BackPropVarianceCounter) {
-                        grad2 = v1 * sqr(v2);
-                        counter = v1 * width(v2);
+                        grad2 = v12 * sqr(v2);
+                        counter = v1c * width(v2);
                     }
                 }
             }
         } else {
             grad = fmadd(v1, v2, grad);
             if (flags & ADFlag::BackPropVarianceCounter) {
-                grad2 = fmadd(v1, sqr(v2), grad2);
-                counter = fmadd(v1, width(v2), counter);
+                grad2 = fmadd(v12, sqr(v2), grad2);
+                counter = fmadd(v1c, width(v2), counter);
             }
         }
     }
@@ -2148,7 +2148,7 @@ void ad_traverse(ADMode mode, uint32_t flags) {
                 }
             }
         } else {
-            v1->mul_accum(v0->grad, edge.weight, v0->size, flags, is_leaf);
+            v1->mul_accum(v0->grad, v0->grad2, v0->counter, edge.weight, v0->size, flags, is_leaf);
 
             if (flags & (uint32_t) ADFlag::ClearEdges)
                 edge.weight = Value();
