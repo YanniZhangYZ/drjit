@@ -52,6 +52,7 @@
  * This is an intentional decision to allow for a simple and performant
  * implementation.
  */
+#include <iostream>
 #include "common.h"
 #include <drjit/jit.h>
 #include <drjit/math.h>
@@ -248,7 +249,7 @@ struct Variable {
      * optimizations.
      */
     template <typename T = Value>
-    void accum(const T& v, uint32_t src_size, uint32_t flags=0, bool is_leaf=false) {
+    void accum(const T& v, uint32_t src_size, uint32_t flags=(uint32_t) ADFlag::Default, bool is_leaf=false) {
         if constexpr (is_array_v<T>) {
             bool grad_valid = is_valid(grad);
 
@@ -310,18 +311,18 @@ struct Variable {
                     }
                 }
                 else {
-                    grad = v;
+                    grad = std::move(v);
                     if (flags & ADFlag::BackPropVarianceCounter) {
-                        grad2 = v;
-                        counter = v;
+                        grad2 = std::move(v);
+                        counter = std::move(v);
                     }
                 }
             }
         } else {
             grad += v;
             if (flags & ADFlag::BackPropVarianceCounter) {
-                grad2 = v;
-                counter = v;
+                grad2 += v;
+                counter += v;
             }
         }
     }
@@ -365,8 +366,12 @@ struct Variable {
             bool grad_valid = is_valid(grad);
             // std::cout << "mul_accum " << src_size << " " << size << " " << grad_valid << " " << is_leaf << std::endl;
             // std::cout << "v1: " << v1 << std::endl;
+            // std::cout << "v12: " << v12 << std::endl;
+            // std::cout << "v1c: " << v1c << std::endl;
             // std::cout << "v2: " << v2 << std::endl;
             // std::cout << "grad (before): " << grad << std::endl;
+            // std::cout << "grad2 (before): " << grad2 << std::endl;
+            // std::cout << "counter (before): " << counter << std::endl;
 
             if (size == 1 && src_size != 1) {
                 /* When this variable is scalar (size == 1) and the source is
@@ -797,7 +802,7 @@ static std::pair<uint32_t, Variable *> ad_var_new(const char *label,
             rec = jit_flag(JitFlag::Recording);
 
         auto result = state.variables.try_emplace(index, label, size, rec);
-        if (likely(result.second))
+        if (likely(result.second)) 
             return { index, &result.first.value() };
     }
 }
@@ -1411,7 +1416,7 @@ template <typename Value> struct GatherEdge : Special {
 
         if (source->size == 1 && target->size == 1 && !target->placeholder) {
             // Downgrade to scalar op
-            source->accum(select(mask, target->grad, 0.f), 1);
+            source->accum(select(mask, target->grad, 0.f), 1, flags);
             return;
         }
 
@@ -1425,7 +1430,7 @@ template <typename Value> struct GatherEdge : Special {
 
         } else if ((uint32_t) source_grad.size() != size) {
             source_grad.resize(size);
-            if(flags & ADFlag::BackPropVarianceCounter){
+            if (flags & ADFlag::BackPropVarianceCounter) {
                 source_grad2.resize(size);
                 source_counter.resize(size);
             }
@@ -1776,9 +1781,9 @@ void ad_set_grad(uint32_t index, const T &value, bool fail_if_missing) {
 
     ad_trace("ad_set_grad(a%u)", index);
     if (v.size != 1 || size_in == 1) {
-        v.grad = value;
-        v.grad2 = value;
-        v.counter = value;
+        v.grad = std::move(value);
+        v.grad2 = std::move(value);
+        v.counter = std::move(value);
     }
     else {
         v.grad = sum(value);
@@ -2018,6 +2023,12 @@ void ad_traverse(ADMode mode, uint32_t flags) {
         if (dr_loop_prev) {
             dr_loop_todo.push_back(prev->grad);
             schedule(prev->grad);
+            // if (flags & ADFlag::BackPropVarianceCounter) {
+            //     dr_loop_todo.push_back(prev->grad2);
+            //     schedule(prev->grad2);
+            //     dr_loop_todo.push_back(prev->counter);
+            //     schedule(prev->counter);
+            // }
 
             if (!dr_loop_cur) {
                 ad_trace("ad_traverse(): evaluating %zi loop variables",
@@ -2128,6 +2139,12 @@ void ad_traverse(ADMode mode, uint32_t flags) {
             snprintf(tmp, 256, "%s_grad", v0->label);
             if (width(v0->grad) != 0)
                 set_label(v0->grad, tmp);
+            snprintf(tmp, 256, "%s_grad2", v0->label);
+            if (width(v0->grad2) != 0)
+                set_label(v0->grad2, tmp);
+            snprintf(tmp, 256, "%s_counter", v0->label);
+            if (width(v0->counter) != 0)
+                set_label(v0->counter, tmp);
         }
 
         bool is_leaf = (mode == ADMode::Backward && v1->next_bwd == 0);
