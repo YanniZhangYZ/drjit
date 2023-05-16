@@ -1285,6 +1285,36 @@ def grad_(a):
 
     return result
 
+def grad2_(a):
+    if not a.IsDiff:
+        return None
+
+    t = _dr.detached_t(type(a))
+
+    if a.IsTensor:
+        return t(a.array.grad2_(), a.shape)
+    else:
+        result = t.empty_(len(a) if a.Size == Dynamic else 0)
+        for i in range(len(a)):
+            result[i] = a[i].grad2_()
+
+    return result
+
+def counter_(a):
+    if not a.IsDiff:
+        return None
+
+    t = _dr.detached_t(type(a))
+
+    if a.IsTensor:
+        return t(a.array.counter_(), a.shape)
+    else:
+        result = t.empty_(len(a) if a.Size == Dynamic else 0)
+        for i in range(len(a)):
+            result[i] = a[i].counter_()
+
+    return result
+
 
 def grad_enabled_(a):
     if not a.IsDiff:

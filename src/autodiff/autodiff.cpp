@@ -253,7 +253,9 @@ struct Variable {
         if constexpr (is_array_v<T>) {
             bool grad_valid = is_valid(grad);
 
-            // std::cout << "accum " << v.size() << " " << src_size << " " << size << " " << grad_valid << std::endl;
+            std::cout << "before: accum v size " << width(v) << "; grad size " << width(grad) << "; grad2 size " << width(grad2) << std::endl;
+            // std::cout << "idx high " << index_hi << "; ref count" << ref_count << std::endl;
+
             if (size == 1 && src_size != 1) {
                 /* When this variable is scalar (size == 1) and the source is
                    not (src_size != 1), the gradient must be reduced to a single
@@ -284,10 +286,11 @@ struct Variable {
                         if (is_leaf) {
                             grad2 += grad2_coeff;
                             counter += counter_coeff;
-                        } else {
-                            grad2 += v2;
-                            counter += v2;
-                        }
+                        } 
+                        // else {
+                        //     grad2 += v2;
+                        //     counter += v2;
+                        // }
                     }
                 }
                 else {
@@ -296,10 +299,11 @@ struct Variable {
                         if (is_leaf) {
                             grad2 = std::move(grad2_coeff);
                             counter = std::move(counter_coeff);
-                        } else {
-                            grad2 = std::move(v2);
-                            counter = std::move(v2);
-                        }
+                        } 
+                        // else {
+                        //     grad2 = std::move(v2);
+                        //     counter = std::move(v2);
+                        // }
                     } 
                 }
             } else {
@@ -325,6 +329,8 @@ struct Variable {
                 counter += v;
             }
         }
+        std::cout << "after: accum v size " << width(v) << "; grad size " << width(grad) << "; grad2 size " << width(grad2) << std::endl;
+
     }
 
     /**
@@ -372,6 +378,11 @@ struct Variable {
             // std::cout << "grad (before): " << grad << std::endl;
             // std::cout << "grad2 (before): " << grad2 << std::endl;
             // std::cout << "counter (before): " << counter << std::endl;
+
+            // std::cout << "mul_accum v1 size " << v1.size() << "; src size " << src_size << "; size " << size << "; valid " << grad_valid << std::endl;
+            // std::cout << "mul_idx high " << index_hi << "; ref count " << ref_count << std::endl;
+            // std::cout << "--------------------------------------"<< std::endl;
+
 
             if (size == 1 && src_size != 1) {
                 /* When this variable is scalar (size == 1) and the source is
@@ -437,6 +448,9 @@ struct Variable {
                 counter = fmadd(v1c, width(v2), counter);
             }
         }
+        // std::cout << "grad (after): " << grad << std::endl;
+        // std::cout << "grad2 (after): " << grad2 << std::endl;
+        // std::cout << "counter (after): " << counter << std::endl;
     }
 
     bool is_scalar() const { return size == 1; }
