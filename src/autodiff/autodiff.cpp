@@ -249,13 +249,13 @@ struct Variable {
      * optimizations.
      */
     template <typename T = Value>
-    void accum(const T& v, uint32_t src_size, uint32_t flags=(uint32_t) ADFlag::Default, bool is_leaf=false) {
+    void accum(const T& v, const T& vg2, const T& vc, uint32_t src_size, uint32_t flags=(uint32_t) ADFlag::Default, bool is_leaf=false) {
         if constexpr (is_array_v<T>) {
             bool grad_valid = is_valid(grad);
 
             // std::cout << "before: accum v size " << width(v) << "; grad size " << width(grad) << "; grad2 size " << width(grad2) << std::endl;
             // std::cout << "idx high " << index_hi << "; ref count" << ref_count << std::endl;
-            std::cout << "this is accum" << std::endl;
+            // std::cout << "this is accum" << std::endl;
 
 
             if (size == 1 && src_size != 1) {
@@ -288,7 +288,7 @@ struct Variable {
                         if (is_leaf) {
                             grad2 += grad2_coeff;
                             counter += counter_coeff;
-                            std::cout << "counter: "<< counter <<" += counter_coeff: "<< counter_coeff<<std::endl;
+                            // std::cout << "counter: "<< counter <<" += counter_coeff: "<< counter_coeff<<std::endl;
                         } 
                         // else {
                         //     grad2 += v2;
@@ -302,7 +302,7 @@ struct Variable {
                         if (is_leaf) {
                             grad2 = std::move(grad2_coeff);
                             counter = std::move(counter_coeff);
-                            std::cout << "counter: "<< counter <<" move counter_coeff: "<< counter_coeff<<std::endl;
+                            // std::cout << "counter: "<< counter <<" move counter_coeff: "<< counter_coeff<<std::endl;
 
                         } 
                         // else {
@@ -315,18 +315,18 @@ struct Variable {
                 if (grad_valid) {
                     grad += v;
                     if (flags & ADFlag::BackPropVarianceCounter) {
-                        grad2 += v;
-                        counter += v;
-                        std::cout << "counter: "<< counter <<" += v: "<< v<<std::endl;
+                        grad2 += vg2;
+                        counter += vc;
+                        // std::cout << "counter: "<< counter <<" += vc: "<< vc<<std::endl;
 
                     }
                 }
                 else {
                     grad = std::move(v);
                     if (flags & ADFlag::BackPropVarianceCounter) {
-                        grad2 = std::move(v);
-                        counter = std::move(v);
-                        std::cout << "counter: "<< counter <<" move v: "<< v<<std::endl;
+                        grad2 = std::move(vg2);
+                        counter = std::move(vc);
+                        // std::cout << "counter: "<< counter <<" move vc: "<< vc<<std::endl;
 
                     }
                 }
@@ -334,9 +334,9 @@ struct Variable {
         } else {
             grad += v;
             if (flags & ADFlag::BackPropVarianceCounter) {
-                grad2 += v;
-                counter += v;
-                std::cout << "final: counter: "<< counter <<" += v: "<< v<<std::endl;
+                grad2 += vg2;
+                counter += vc;
+                // std::cout << "final: counter: "<< counter <<" += vc: "<< vc<<std::endl;
 
             }
         }
@@ -359,7 +359,7 @@ struct Variable {
            v1 == 0 implies v1 * v2 == 0, even if multiplication by
            v2 would produce a NaN (e.g. if v2 is infinite or NaN). */
 
-        std::cout<<" this is mul_accum"<<std::endl;
+        // std::cout<<" this is mul_accum"<<std::endl;
         T z = 0.f, v2;
 
         if constexpr (is_jit_v<T>) {
@@ -419,18 +419,18 @@ struct Variable {
                     if (flags & ADFlag::BackPropVarianceCounter) {
                         grad2_coeff = sum(v12 * sqr(v2));
                         counter_coeff = v1c * width(v2);
-                        std::cout << "1: scaling counter, v1c: " << v1c << " width v2:"<< width(v2) << std::endl;
+                        // std::cout << "1: scaling counter, v1c: " << v1c << " width v2:"<< width(v2) << std::endl;
                     }
 
                 }
-                std::cout<<"counter_coeff "<<counter_coeff<<std::endl;
+                // std::cout<<"counter_coeff "<<counter_coeff<<std::endl;
 
                 if (grad_valid) {
                     grad += v3;
                     if (flags & ADFlag::BackPropVarianceCounter) {
                         grad2 += grad2_coeff;
                         counter += counter_coeff;
-                        std::cout<<"counter_coeff +="<<std::endl;
+                        // std::cout<<"counter_coeff +="<<std::endl;
 
                     }
                 }
@@ -439,7 +439,7 @@ struct Variable {
                     if (flags & ADFlag::BackPropVarianceCounter) {
                         grad2 = std::move(grad2_coeff);
                         counter = std::move(counter_coeff);
-                        std::cout<<"counter_coeff ="<<std::endl;
+                        // std::cout<<"counter_coeff ="<<std::endl;
 
                     }
                 }
@@ -449,7 +449,7 @@ struct Variable {
                     if (flags & ADFlag::BackPropVarianceCounter) {
                         grad2 = fmadd(v12, sqr(v2), grad2);
                         counter = fmadd(v1c, width(v2), counter);
-                        std::cout << "2: scaling counter, v1c: " << v1c << " width v2:"<< width(v2) << std::endl;
+                        // std::cout << "2: scaling counter, v1c: " << v1c << " width v2:"<< width(v2) << std::endl;
 
                     }
                 }
@@ -458,7 +458,7 @@ struct Variable {
                     if (flags & ADFlag::BackPropVarianceCounter) {
                         grad2 = v12 * sqr(v2);
                         counter = v1c * width(v2);
-                        std::cout << "3: scaling counter, v1c: " << v1c << " width v2:"<< width(v2) << std::endl;
+                        // std::cout << "3: scaling counter, v1c: " << v1c << " width v2:"<< width(v2) << std::endl;
 
                     }
                 }
@@ -468,7 +468,7 @@ struct Variable {
             if (flags & ADFlag::BackPropVarianceCounter) {
                 grad2 = fmadd(v12, sqr(v2), grad2);
                 counter = fmadd(v1c, width(v2), counter);
-                std::cout << "4: scaling counter, v1c: " << v1c << " width v2:"<< width(v2) << std::endl;
+                // std::cout << "4: scaling counter, v1c: " << v1c << " width v2:"<< width(v2) << std::endl;
 
             }
         }
@@ -1167,15 +1167,29 @@ template <typename Value> struct MaskEdge : Special {
     MaskEdge(const Mask &mask, bool negate) : mask(mask), negate(negate) { }
 
     void backward(Variable *source, const Variable *target, uint32_t flags, bool is_leaf) const override {
+        // source->accum(!negate ? detail::and_(target->grad, mask)
+        //                       : detail::andnot_(target->grad, mask),
+        //               target->size, flags, is_leaf);
         source->accum(!negate ? detail::and_(target->grad, mask)
-                              : detail::andnot_(target->grad, mask),
-                      target->size, flags, is_leaf);
+                        : detail::andnot_(target->grad, mask),
+                        !negate ? detail::and_(target->grad2, mask)
+                        : detail::andnot_(target->grad2, mask),
+                        !negate ? detail::and_(target->counter, mask)
+                        : detail::andnot_(target->counter, mask),
+                target->size, flags, is_leaf);
     }
 
     void forward(const Variable *source, Variable *target, uint32_t) const override {
+        // target->accum(!negate ? detail::and_(source->grad, mask)
+        //                       : detail::andnot_(source->grad, mask),
+        //               source->size);
         target->accum(!negate ? detail::and_(source->grad, mask)
-                              : detail::andnot_(source->grad, mask),
-                      source->size);
+                        : detail::andnot_(source->grad, mask),
+                        !negate ? detail::and_(source->grad2, mask)
+                        : detail::andnot_(source->grad2, mask),
+                        !negate ? detail::and_(source->counter, mask)
+                        : detail::andnot_(source->counter, mask),
+                source->size);
     }
 
     Mask mask;
@@ -1451,13 +1465,15 @@ template <typename Value> struct GatherEdge : Special {
         Value &source_grad2 = (Value &) source->grad2;
         Value &source_counter = (Value &) source->counter;
         uint32_t size = source->size;
-        std::cout << "GatherEdge::backward" << std::endl;
-        std::cout << "grad: " << source_grad << " grad2: " << source_grad2 << " counter: " << source_counter << std::endl;
+        // std::cout << "GatherEdge::backward" << std::endl;
+        // std::cout << "grad: " << source_grad << " grad2: " << source_grad2 << " counter: " << source_counter << std::endl;
 
         if (source->size == 1 && target->size == 1 && !target->placeholder) {
             // Downgrade to scalar op
-            source->accum(select(mask, target->grad, 0.f), 1, flags);
-            std::cout << "size  = 1: grad: " << source_grad << " grad2: " << source_grad2 << " counter: " << source_counter << std::endl;
+            // source->accum(select(mask, target->grad, 0.f), 1, flags);
+            source->accum(select(mask, target->grad, 0.f), select(mask, target->grad2, 0.f),select(mask, target->counter, 0.f),1, flags);
+
+            // std::cout << "size  = 1: grad: " << source_grad << " grad2: " << source_grad2 << " counter: " << source_counter << std::endl;
             return;
         }
 
@@ -1467,7 +1483,7 @@ template <typename Value> struct GatherEdge : Special {
                 source_grad2 = zeros<Value>(size);
                 source_counter = zeros<Value>(size);
             }
-            std::cout << "grad not valid all zero: grad: " << source_grad << " grad2: " << source_grad2 << " counter: " << source_counter << std::endl;
+            // std::cout << "grad not valid all zero: grad: " << source_grad << " grad2: " << source_grad2 << " counter: " << source_counter << std::endl;
 
 
         } else if ((uint32_t) source_grad.size() != size) {
@@ -1476,7 +1492,7 @@ template <typename Value> struct GatherEdge : Special {
                 source_grad2.resize(size);
                 source_counter.resize(size);
             }
-            std::cout << "resize : grad: " << source_grad << " grad2: " << source_grad2 << " counter: " << source_counter << std::endl;
+            // std::cout << "resize : grad: " << source_grad << " grad2: " << source_grad2 << " counter: " << source_counter << std::endl;
 
         }
 
@@ -1485,32 +1501,36 @@ template <typename Value> struct GatherEdge : Special {
         if (!permute) {
             if (flags & ADFlag::BackPropVarianceCounter) {
                 // scatter_reduce(ReduceOp::Add, source_grad2, sqr(target->grad2), offset, mask);
-                std::cout << "before scatter src grad2: " << source_grad2 << std::endl;
+                // std::cout << "before scatter src grad2: " << source_grad2 << std::endl;
                 scatter_reduce(ReduceOp::Add, source_grad2, target->grad2, offset, mask);
                 // scatter_reduce(ReduceOp::Add, source_counter, Value(1.0), offset, mask);
                 scatter_reduce(ReduceOp::Add, source_counter, target->counter, offset, mask);
 
-                std::cout << "target grad2: " << target->grad2 << "target grad: " << target->grad << std::endl;
+                // std::cout << "target grad2: " << target->grad2 << "target grad: " << target->grad << std::endl;
 
             }
         }
 
         if (permute){
             scatter(source_grad, target->grad, offset, mask);
-            std::cout << " this is scatter itself " << source_counter << std::endl;
+            // std::cout << " this is scatter itself " << source_counter << std::endl;
 
         }
         else{
             scatter_reduce(ReduceOp::Add, source_grad, target->grad, offset, mask);
-            std::cout << "after scatter reduce : grad: " << source_grad << " grad2: " << source_grad2 << " counter: " << source_counter << std::endl;
+            // std::cout << "after scatter reduce : grad: " << source_grad << " grad2: " << source_grad2 << " counter: " << source_counter << std::endl;
         }
             
     }
 
     void forward(const Variable *source, Variable *target, uint32_t) const override {
         MaskGuard guard(mask_stack);
+        // target->accum(gather<Value>(source->grad, offset, mask),
+        //               (uint32_t) width(offset));
         target->accum(gather<Value>(source->grad, offset, mask),
-                      (uint32_t) width(offset));
+                gather<Value>(source->grad2, offset, mask),
+                gather<Value>(source->counter, offset, mask),
+                (uint32_t) width(offset));
     }
 
     Index offset;
@@ -1605,8 +1625,12 @@ template <typename Value> struct ScatterEdge : Special {
 
     void backward(Variable *source, const Variable *target, uint32_t, bool) const override {
         MaskGuard guard(mask_stack);
+        // source->accum(gather<Value>(target->grad, offset, mask),
+        //               (uint32_t) width(offset));
         source->accum(gather<Value>(target->grad, offset, mask),
-                      (uint32_t) width(offset));
+                gather<Value>(target->grad2, offset, mask),
+                gather<Value>(target->counter, offset, mask),
+                (uint32_t) width(offset));
     }
 
     void forward(const Variable *source, Variable *target, uint32_t) const override {
@@ -1874,7 +1898,9 @@ void ad_accum_grad(uint32_t index, const T &value, bool fail_if_missing) {
                  size_in, index, v.size);
 
     ad_trace("ad_accum_grad(a%u)", index);
-    v.accum(value, (uint32_t) size_in);
+    // v.accum(value, (uint32_t) size_in);
+    T counter_val = width(value);
+    v.accum(value,sqr(value), counter_val ,(uint32_t) size_in);
 }
 
 template <typename T> void ad_set_label(uint32_t index, const char *label) {
