@@ -4102,6 +4102,8 @@ def set_grad(dst, src):
         src (object): An arbitrary Dr.Jit array, tensor,
           :ref:`custom data structure <custom-struct>`, sequences, or mapping.
     '''
+    # print("set_grad dist src", dst.counter_()[0], src)
+
     if _dr.is_diff_v(dst) and dst.IsFloat:
         if _dr.grad_enabled(dst):
             if _dr.is_diff_v(src):
@@ -4110,7 +4112,6 @@ def set_grad(dst, src):
             t = _dr.detached_t(dst)
             if type(src) is not t:
                 src = t(src)
-
             dst.set_grad_(src)
     elif isinstance(dst, _Sequence) and not isinstance(dst, str):
         vs = isinstance(src, _Sequence) and not isinstance(src, str)
@@ -4129,6 +4130,7 @@ def set_grad(dst, src):
         assert not ve or type(src) is type(dst)
         for k in type(dst).DRJIT_STRUCT.keys():
             set_grad(getattr(dst, k), getattr(src, k) if ve else src)
+    # print("after set_grad dist", dst.counter_())
 
 
 def accum_grad(dst, src):
@@ -4474,7 +4476,9 @@ def forward_from(arg, flags=_dr.ADFlag.Default):
     '''
     ta = type(arg)
     _check_grad_enabled('forward_from', ta, arg)
+    # print("forward_from")
     set_grad(arg, 1)
+    # print("forward_from finish set arg")
     enqueue(_dr.ADMode.Forward, arg)
     traverse(ta, _dr.ADMode.Forward, flags)
 
@@ -4556,7 +4560,9 @@ def backward_from(arg, flags=_dr.ADFlag.Default):
     if _dr.depth_v(arg) > 1:
         arg = arg + ta(0)
 
+    # print("backward_from")
     set_grad(arg, 1)
+    # print("finish backward_from")
     enqueue(_dr.ADMode.Backward, arg)
     traverse(ta, _dr.ADMode.Backward, flags)
 

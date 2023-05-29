@@ -1849,12 +1849,12 @@ void ad_set_grad(uint32_t index, const T &value, bool fail_if_missing) {
     if (v.size != 1 || size_in == 1) {
         v.grad = value;
         v.grad2 = value * value;
-        v.counter = T(1.0) * scalar_t<T>(size_in);
+        v.counter = select(mask_t<T>(value), size_in, 0.f);
     }
     else {
         v.grad = sum(value);
         v.grad2 = sum(sqr(value));
-        v.counter = sum(T(1.0) * scalar_t<T>(size_in));
+        v.counter = sum(select(mask_t<T>(value), size_in, 0.f));
     }
 }
 
